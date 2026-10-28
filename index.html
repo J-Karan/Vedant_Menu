@@ -166,15 +166,12 @@
       pdfDocument = await pdfjs.getDocument({ url: PDF_URL }).promise;
 
       for (let number = 1; number <= pdfDocument.numPages; number++) {
-        const page = await pdfDocument.getPage(number);
-        const size = page.getViewport({ scale: 1 });
         const shell = document.createElement("section");
         shell.className = "page is-loading";
         shell.id = "page-" + number;
-        shell.style.aspectRatio = size.width + " / " + size.height;
+        shell.style.aspectRatio = "0.71";
         shell.setAttribute("aria-label", "Page " + number + " of " + pdfDocument.numPages);
         shell.innerHTML = '<div class="page-placeholder"><span class="loading-spinner" aria-hidden="true"></span><span>Loading page ' + number + '</span></div>';
-        page.cleanup();
         pageNodes.push(shell);
         pages.append(shell);
       }
