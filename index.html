@@ -42,6 +42,10 @@
     #pages { width: min(100%, 1020px); margin: 18px auto 0; padding: 0 16px; }
     .page { width: 100%; margin: 0 auto 22px; overflow: hidden; border: 1px solid #e5e1d5; border-radius: 10px; background: #fff; box-shadow: 0 12px 34px #283d2d16, 0 2px 5px #283d2d0a; scroll-margin-top: 158px; }
     .page canvas { display: block; width: 100%; height: auto; }
+    .page.is-loading { display: grid; place-items: center; background: #fffdf8; }
+    .page-placeholder { display: grid; justify-items: center; gap: .7rem; color: #778277; font-size: .82rem; }
+    .loading-spinner { width: 25px; height: 25px; border: 2px solid #dce5d9; border-top-color: var(--leaf); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .site-footer { padding: 20px 1rem max(24px, env(safe-area-inset-bottom)); color: #78847a; font-size: .75rem; text-align: center; }
     .site-footer span { color: var(--gold); }
     @media (max-width: 640px) {
@@ -109,6 +113,7 @@
     const next = document.querySelector("#next");
     let currentPage = 1;
     let pageNodes = [];
+    let pdfDocument;
 
     function syncControls() {
       count.textContent = pageNodes.length ? currentPage + " / " + pageNodes.length : "—";
@@ -116,10 +121,40 @@
       next.disabled = currentPage >= pageNodes.length;
     }
 
+    async function renderPage(number) {
+      const shell = pageNodes[number - 1];
+      if (!shell || shell.dataset.rendered || shell.dataset.rendering) return;
+      shell.dataset.rendering = "true";
+      try {
+        const page = await pdfDocument.getPage(number);
+        const base = page.getViewport({ scale: 1 });
+        const width = Math.min(pages.clientWidth, 900);
+        const viewport = page.getViewport({ scale: width / base.width });
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.floor(viewport.width * ratio);
+        canvas.height = Math.floor(viewport.height * ratio);
+        canvas.style.width = "100%";
+        const context = canvas.getContext("2d", { alpha: false });
+        await page.render({ canvas, canvasContext: context, viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0] }).promise;
+        shell.replaceChildren(canvas);
+        shell.classList.remove("is-loading");
+        shell.dataset.rendered = "true";
+        delete shell.dataset.rendering;
+        page.cleanup();
+      } catch (error) {
+        console.error("Unable to render menu page " + number, error);
+        shell.classList.remove("is-loading");
+        shell.innerHTML = '<div class="page-placeholder">This page could not be rendered.</div>';
+        delete shell.dataset.rendering;
+      }
+    }
+
     function goToPage(number) {
       currentPage = Math.max(1, Math.min(pageNodes.length, number));
       pageNodes[currentPage - 1]?.scrollIntoView({ behavior: "smooth", block: "start" });
       syncControls();
+      renderPage(currentPage);
     }
 
     previous.addEventListener("click", () => goToPage(currentPage - 1));
@@ -128,41 +163,39 @@
     try {
       const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@" + PDFJS_VERSION + "/build/pdf.mjs");
       pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@" + PDFJS_VERSION + "/build/pdf.worker.mjs";
-      const pdf = await pdfjs.getDocument({ url: PDF_URL }).promise;
-      count.textContent = "1 / " + pdf.numPages;
+      pdfDocument = await pdfjs.getDocument({ url: PDF_URL }).promise;
 
-      for (let number = 1; number <= pdf.numPages; number++) {
-        const page = await pdf.getPage(number);
-        const base = page.getViewport({ scale: 1 });
-        const width = Math.min(pages.clientWidth, 900);
-        const scale = width / base.width;
-        const viewport = page.getViewport({ scale });
-        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      for (let number = 1; number <= pdfDocument.numPages; number++) {
+        const page = await pdfDocument.getPage(number);
+        const size = page.getViewport({ scale: 1 });
         const shell = document.createElement("section");
-        shell.className = "page";
+        shell.className = "page is-loading";
         shell.id = "page-" + number;
-        shell.setAttribute("aria-label", "Page " + number + " of " + pdf.numPages);
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.floor(viewport.width * ratio);
-        canvas.height = Math.floor(viewport.height * ratio);
-        canvas.style.width = "100%";
-        const context = canvas.getContext("2d", { alpha: false });
-        await page.render({ canvas, canvasContext: context, viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0] }).promise;
-        shell.append(canvas);
+        shell.style.aspectRatio = size.width + " / " + size.height;
+        shell.setAttribute("aria-label", "Page " + number + " of " + pdfDocument.numPages);
+        shell.innerHTML = '<div class="page-placeholder"><span class="loading-spinner" aria-hidden="true"></span><span>Loading page ' + number + '</span></div>';
+        page.cleanup();
         pageNodes.push(shell);
         pages.append(shell);
-        page.cleanup();
       }
 
-      status.hidden = true;
-      syncControls();
-      const observer = new IntersectionObserver((entries) => {
+      const renderObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) if (entry.isIntersecting) {
+          const index = pageNodes.indexOf(entry.target);
+          if (index >= 0) renderPage(index + 1);
+        }
+      }, { rootMargin: "1000px 0px" });
+      const pageObserver = new IntersectionObserver((entries) => {
         for (const entry of entries) if (entry.isIntersecting) {
           const index = pageNodes.indexOf(entry.target);
           if (index >= 0) { currentPage = index + 1; syncControls(); }
         }
       }, { rootMargin: "-20% 0px -65% 0px" });
-      pageNodes.forEach((node) => observer.observe(node));
+      pageNodes.forEach((node) => { renderObserver.observe(node); pageObserver.observe(node); });
+
+      syncControls();
+      await renderPage(1);
+      status.hidden = true;
     } catch (error) {
       console.error("Unable to display menu PDF", error);
       status.textContent = "The menu could not be displayed. Use the link below to open the PDF.";
