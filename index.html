@@ -2,30 +2,116 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#153c32">
   <title>Vedant Pure Veg Menu</title>
   <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; margin: 0; }
-    body { display: flex; flex-direction: column; font: 16px system-ui, sans-serif; color: #fff; background: #153c32; }
-    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 1rem; }
-    h1 { margin: 0; font-size: 1rem; }
-    a { color: inherit; }
-    .download { padding: .5rem .75rem; border: 1px solid #ffffff80; border-radius: .4rem; text-decoration: none; white-space: nowrap; }
-    main { flex: 1; min-height: 0; background: #555; }
-    iframe { display: block; width: 100%; height: 100%; border: 0; }
+    html, body { min-height: 100%; margin: 0; }
+    body { background: #173c32; color: #fff; }
+    header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .7rem max(1rem, env(safe-area-inset-left)); background: #153c32; box-shadow: 0 2px 8px #0004; }
+    h1 { margin: 0; font-size: 1rem; line-height: 1.25; }
+    .actions { display: flex; align-items: center; gap: .5rem; }
+    button, .download { min-height: 42px; padding: .55rem .8rem; border: 1px solid #ffffff80; border-radius: .5rem; background: transparent; color: #fff; font: inherit; text-decoration: none; cursor: pointer; }
+    button:disabled { opacity: .45; cursor: default; }
+    #status { padding: 1rem; text-align: center; color: #e8eee9; }
+    #status[hidden] { display: none; }
+    #pages { width: min(100%, 920px); margin: 0 auto; padding: 1rem; }
+    .page { margin: 0 auto 1rem; overflow: hidden; background: #fff; box-shadow: 0 2px 14px #0005; }
+    .page canvas { display: block; width: 100%; height: auto; }
+    .page-label { padding: .3rem .5rem; background: #f5f5f5; color: #333; font-size: .75rem; text-align: center; }
+    @media (max-width: 600px) {
+      header { padding: .55rem .65rem; }
+      h1 { max-width: 9.5rem; font-size: .92rem; }
+      .actions { gap: .35rem; }
+      button, .download { min-height: 40px; padding: .45rem .58rem; font-size: .86rem; }
+      #pages { padding: .55rem; }
+      .page { margin-bottom: .6rem; }
+    }
   </style>
 </head>
 <body>
   <header>
     <h1>Vedant Pure Veg Menu</h1>
-    <a class="download" href="VEDANT%20PURE%20VEG.pdf" download>Download PDF</a>
+    <div class="actions">
+      <button id="prev" type="button" aria-label="Previous page" disabled>‹</button>
+      <span id="page-count" aria-live="polite">…</span>
+      <button id="next" type="button" aria-label="Next page" disabled>›</button>
+      <a class="download" href="VEDANT%20PURE%20VEG.pdf" download>Download</a>
+    </div>
   </header>
-  <main>
-    <iframe src="VEDANT%20PURE%20VEG.pdf#view=FitH" title="Vedant Pure Veg menu PDF">
-      <p>Your browser cannot display the menu inline. <a href="VEDANT%20PURE%20VEG.pdf">Open the PDF</a>.</p>
-    </iframe>
-  </main>
+  <div id="status" role="status">Loading menu…</div>
+  <main id="pages" aria-label="Menu pages"></main>
+  <script type="module">
+    const PDF_URL = "./VEDANT%20PURE%20VEG.pdf";
+    const PDFJS_VERSION = "6.4.299";
+    const status = document.querySelector("#status");
+    const pages = document.querySelector("#pages");
+    const count = document.querySelector("#page-count");
+    const previous = document.querySelector("#prev");
+    const next = document.querySelector("#next");
+    let currentPage = 1;
+    let pageNodes = [];
+
+    function syncControls() {
+      count.textContent = pageNodes.length ? currentPage + " / " + pageNodes.length : "—";
+      previous.disabled = currentPage <= 1;
+      next.disabled = currentPage >= pageNodes.length;
+    }
+
+    function goToPage(number) {
+      currentPage = Math.max(1, Math.min(pageNodes.length, number));
+      pageNodes[currentPage - 1]?.scrollIntoView({ behavior: "smooth", block: "start" });
+      syncControls();
+    }
+
+    previous.addEventListener("click", () => goToPage(currentPage - 1));
+    next.addEventListener("click", () => goToPage(currentPage + 1));
+
+    try {
+      const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@" + PDFJS_VERSION + "/build/pdf.mjs");
+      pdfjs.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@" + PDFJS_VERSION + "/build/pdf.worker.mjs";
+      const pdf = await pdfjs.getDocument({ url: PDF_URL }).promise;
+      count.textContent = "1 / " + pdf.numPages;
+
+      for (let number = 1; number <= pdf.numPages; number++) {
+        const page = await pdf.getPage(number);
+        const base = page.getViewport({ scale: 1 });
+        const width = Math.min(pages.clientWidth, 900);
+        const scale = width / base.width;
+        const viewport = page.getViewport({ scale });
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        const shell = document.createElement("section");
+        shell.className = "page";
+        shell.id = "page-" + number;
+        shell.setAttribute("aria-label", "Page " + number + " of " + pdf.numPages);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.floor(viewport.width * ratio);
+        canvas.height = Math.floor(viewport.height * ratio);
+        canvas.style.width = "100%";
+        const context = canvas.getContext("2d", { alpha: false });
+        await page.render({ canvas, canvasContext: context, viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0] }).promise;
+        shell.append(canvas);
+        pageNodes.push(shell);
+        pages.append(shell);
+        page.cleanup();
+      }
+
+      status.hidden = true;
+      syncControls();
+      const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) if (entry.isIntersecting) {
+          const index = pageNodes.indexOf(entry.target);
+          if (index >= 0) { currentPage = index + 1; syncControls(); }
+        }
+      }, { rootMargin: "-20% 0px -65% 0px" });
+      pageNodes.forEach((node) => observer.observe(node));
+    } catch (error) {
+      console.error("Unable to display menu PDF", error);
+      status.textContent = "The menu could not be displayed. Use Download to open or save the PDF.";
+      status.insertAdjacentHTML("beforeend", ' <a href="' + PDF_URL + '">Open PDF</a>');
+    }
+  </script>
 </body>
 </html>
