@@ -13,7 +13,7 @@
     header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .7rem max(1rem, env(safe-area-inset-left)); background: #153c32; box-shadow: 0 2px 8px #0004; }
     h1 { margin: 0; font-size: 1rem; line-height: 1.25; }
     .actions { display: flex; align-items: center; gap: .5rem; }
-    button, .download { min-height: 42px; padding: .55rem .8rem; border: 1px solid #ffffff80; border-radius: .5rem; background: transparent; color: #fff; font: inherit; text-decoration: none; cursor: pointer; }
+    button { min-height: 42px; padding: .55rem .8rem; border: 1px solid #ffffff80; border-radius: .5rem; background: transparent; color: #fff; font: inherit; text-decoration: none; cursor: pointer; }
     button:disabled { opacity: .45; cursor: default; }
     #status { padding: 1rem; text-align: center; color: #e8eee9; }
     #status[hidden] { display: none; }
@@ -25,7 +25,7 @@
       header { padding: .55rem .65rem; }
       h1 { max-width: 9.5rem; font-size: .92rem; }
       .actions { gap: .35rem; }
-      button, .download { min-height: 40px; padding: .45rem .58rem; font-size: .86rem; }
+      button { min-height: 40px; padding: .45rem .58rem; font-size: .86rem; }
       #pages { padding: .55rem; }
       .page { margin-bottom: .6rem; }
     }
@@ -38,7 +38,6 @@
       <button id="prev" type="button" aria-label="Previous page" disabled>‹</button>
       <span id="page-count" aria-live="polite">…</span>
       <button id="next" type="button" aria-label="Next page" disabled>›</button>
-      <a class="download" href="VEDANT%20PURE%20VEG.pdf" download>Download</a>
     </div>
   </header>
   <div id="status" role="status">Loading menu…</div>
@@ -109,7 +108,7 @@
       pageNodes.forEach((node) => observer.observe(node));
     } catch (error) {
       console.error("Unable to display menu PDF", error);
-      status.textContent = "The menu could not be displayed. Use Download to open or save the PDF.";
+      status.textContent = "The menu could not be displayed. Use the link below to open the PDF.";
       status.insertAdjacentHTML("beforeend", ' <a href="' + PDF_URL + '">Open PDF</a>');
     }
   </script>
